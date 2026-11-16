@@ -1,0 +1,10 @@
+# Part B: document processing & indexing
+PyMuPDF>=1.24
+beautifulsoup4>=4.12
+pytesseract>=0.3.10      # OCR fallback; also needs the Tesseract binary (brew/apt install tesseract)
+Pillow>=10
+psycopg[binary]>=3.1
+pgvector>=0.3
+numpy>=1.26
+sentence-transformers>=3.0   # default embedder (BAAI/bge-small-en-v1.5, 384-d)
+# openai>=1.40               # only if EMBEDDING_BACKEND=openai
