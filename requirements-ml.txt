@@ -1,0 +1,2 @@
+# Real embedding model (EMBEDDING_BACKEND=sentence-transformers). Pulls in PyTorch.
+sentence-transformers>=3.0

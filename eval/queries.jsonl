@@ -1,0 +1,22 @@
+{"id": "ful-setback", "question": "What are the residential setback rules in Fulshear?", "expect_jurisdictions": ["Fulshear"], "expect_section": "Section 3.2", "expect_answer_contains": ["25 feet"], "tags": ["setback", "municipal", "TX"]}
+{"id": "ful-setback-zip", "question": "front yard setback for a house in 77441", "expect_jurisdictions": ["Fulshear"], "expect_section": "Section 3.2", "tags": ["setback", "zip", "TX"]}
+{"id": "ful-height", "question": "How tall can a house be in Fulshear?", "expect_jurisdictions": ["Fulshear"], "expect_section": "Section 3.3", "expect_answer_contains": ["35 feet"], "tags": ["height", "TX"]}
+{"id": "ful-lot", "question": "minimum lot size and lot width in the R-1 district in Fulshear", "expect_jurisdictions": ["Fulshear"], "expect_section": "Section 3.4", "tags": ["lot_density", "TX"]}
+{"id": "ful-parking", "question": "How many parking spaces does a single-family home need in Fulshear?", "expect_jurisdictions": ["Fulshear"], "expect_section": "Section 3.5", "tags": ["parking", "TX"]}
+{"id": "ful-townhome", "question": "Are townhomes allowed in Cross Creek Ranch and at what density?", "expect_jurisdictions": ["Fulshear"], "expect_section": "Section 3.6", "tags": ["land_use", "alias", "TX"]}
+{"id": "ful-plat", "question": "plat requirements for subdividing land in Fulshear", "expect_jurisdictions": ["Fulshear"], "expect_section": "Section 5.1", "tags": ["subdivision", "TX"]}
+{"id": "ful-parkland", "question": "parkland dedication requirement for a new subdivision in Fulshear", "expect_jurisdictions": ["Fulshear"], "expect_section": "Section 5.3", "tags": ["subdivision", "TX"]}
+{"id": "har-driveway", "question": "driveway access requirements in Cypress, TX", "expect_jurisdictions": ["Harris County"], "expect_section": "Section 4.02", "expect_answer_contains": ["150 feet"], "tags": ["access_dot", "alias", "TX"]}
+{"id": "har-detention", "question": "stormwater detention for a development in zip 77433", "expect_jurisdictions": ["Harris County"], "expect_section": "Section 6.01", "tags": ["environmental", "zip", "TX"]}
+{"id": "har-floodplain", "question": "Can I build in the floodplain in Harris County? What elevation is required?", "expect_jurisdictions": ["Harris County"], "expect_section": "Section 6.02", "tags": ["environmental", "TX"]}
+{"id": "har-row", "question": "minimum right-of-way width for local streets in Harris County", "expect_jurisdictions": ["Harris County"], "expect_section": "Section 4.03", "tags": ["access_dot", "TX"]}
+{"id": "mon-septic", "question": "Septic permit rules in Conroe", "expect_jurisdictions": ["Montgomery County"], "expect_section": "Section 2.1", "expect_answer_contains": ["one acre"], "tags": ["permitting", "alias", "TX"]}
+{"id": "mon-subdiv", "question": "How are subdivision plats reviewed in Montgomery County?", "expect_jurisdictions": ["Montgomery County"], "expect_section": "Section 2.2", "tags": ["subdivision", "TX"]}
+{"id": "was-minor", "question": "minor subdivision approval in Sewell 08080", "expect_jurisdictions": ["Washington Township (Sewell)"], "expect_section": "§ 220-4", "tags": ["subdivision", "zip", "NJ"]}
+{"id": "was-major", "question": "What does a major subdivision need in Washington Township?", "expect_jurisdictions": ["Washington Township (Sewell)"], "expect_section": "§ 220-5", "tags": ["subdivision", "NJ"]}
+{"id": "eve-height", "question": "maximum building height in Marlton", "expect_jurisdictions": ["Evesham Township (Marlton)"], "expect_section": "§ 160-12", "expect_answer_contains": ["35 feet"], "tags": ["height", "alias", "NJ"]}
+{"id": "eve-lot", "question": "minimum lot area in the R-1 district in Evesham", "expect_jurisdictions": ["Evesham Township (Marlton)"], "expect_section": "§ 160-13", "tags": ["lot_density", "NJ"]}
+{"id": "eve-shed", "question": "How far from the property line does a shed have to be in Marlton?", "expect_jurisdictions": ["Evesham Township (Marlton)"], "expect_section": "§ 160-14", "tags": ["setback", "NJ"]}
+{"id": "eve-permit", "question": "Do I need a zoning permit to build a fence in Evesham Township?", "expect_jurisdictions": ["Evesham Township (Marlton)"], "expect_section": "§ 160-60", "tags": ["permitting", "NJ"]}
+{"id": "edge-out-of-scope", "question": "zoning rules in Austin", "expect_jurisdictions": [], "expect_abstain": true, "tags": ["edge", "out_of_scope"]}
+{"id": "edge-no-jurisdiction", "question": "What are the setback rules?", "expect_jurisdictions": [], "expect_abstain": true, "tags": ["edge", "ambiguous"]}
