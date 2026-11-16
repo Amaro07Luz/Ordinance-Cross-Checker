@@ -18,7 +18,7 @@ def make_client(monkeypatch):
     def _make(**env):
         defaults = {"SEED_DIR": os.path.join(ROOT, "eval", "seed_corpus"),
                     "EMBEDDING_BACKEND": "hashing", "LOG_JSON": "false",
-                    "LOG_LEVEL": "WARNING", "ADMIN_TOKEN": "test-token"}
+                    "LOG_LEVEL": "INFO", "ADMIN_TOKEN": "test-token"}  # INFO: run every log call
         for k, v in {**defaults, **env}.items():
             if v is None:
                 monkeypatch.delenv(k, raising=False)

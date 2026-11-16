@@ -14,7 +14,8 @@ def test_health_reports_components(client):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok" and body["index"]["chunks"] > 0
-    assert body["components"]["D_analysis_agent"].startswith("stand-in")
+    assert body["components"]["D_analysis_agent"] == "ok"
+    assert body["answerer"] == "part-d:AnalysisAgent"
     assert "X-Request-ID" in r.headers and "X-Response-Time-ms" in r.headers
 
 
@@ -126,3 +127,23 @@ def test_part_d_failure_falls_back(monkeypatch, make_client):
     status, body = ask(client, "What is the front yard setback in Fulshear?")
     assert status == 200 and body["answer"]["answerer"] == "extractive-stub"
     assert any("analysis agent was unavailable" in w for w in body["warnings"])
+
+
+def test_part_d_details_passed_through(client):
+    _, body = ask(client, "What is the front yard setback in Fulshear?")
+    det = body["answer"]["details"]
+    assert det["mode"] == "extractive" and "needs_human_review" in det and "gaps" in det
+
+
+def test_part_d_timeout_is_not_retried(monkeypatch, make_client):
+    import time as _t
+    calls = {"n": 0}
+
+    def slow(*_):
+        calls["n"] += 1
+        _t.sleep(0.5)
+    _install_fake_part_d(monkeypatch, slow)
+    client = make_client(ANSWER_TIMEOUT_S="0.1")
+    status, body = ask(client, "What is the front yard setback in Fulshear?")
+    assert status == 200 and body["answer"]["answerer"] == "extractive-stub"
+    assert calls["n"] == 1

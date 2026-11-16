@@ -14,7 +14,7 @@ jobs:
         with: { python-version: "3.12" }
       - run: pip install ruff
       - name: Lint platform code (gating)
-        run: ruff check app eval tests
+        run: ruff check app eval tests analysis
       - name: Lint other workstreams (advisory)
         run: ruff check processing retrieval ingestion_pipeline_part_a.py --exit-zero
 
@@ -34,6 +34,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/regintel
       EMBEDDING_BACKEND: hashing
+      ANALYSIS_LLM: none   # gate the extractive path; run LLM evals separately
       SEED_DIR: eval/seed_corpus
       LOG_JSON: "false"
       LOG_LEVEL: WARNING
@@ -49,6 +50,8 @@ jobs:
         run: python -m processing.test_processing
       - name: Part C smoke test (retrieval)
         run: python -m retrieval.test_retrieval
+      - name: Part D tests (analysis agent, extractive + FakeLLM)
+        run: python -m analysis.test_analysis
       - name: Reset document index (Part B's test leaves its own fixtures)
         run: psql "$DATABASE_URL" -c "DROP TABLE IF EXISTS chunks, document_versions, documents CASCADE"
       - name: Part E unit + API tests

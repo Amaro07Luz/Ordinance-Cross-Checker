@@ -94,11 +94,22 @@ class QueryEngine:
         return self.index.search(pq, top_k)
 
     def _answer(self, question, pq, passages) -> Answer:
-        """Part D may call an LLM: bound it with a timeout, retry once, and fall back to
-        the extractive answer rather than failing the whole request."""
+        """Part D may call an LLM: bound it with a timeout and fall back to the extractive
+        answer rather than failing the whole request. Errors are retried once; timeouts
+        are not (Part D already spent its LLM budget, a retry would double the wait)."""
+        def call():
+            return call_with_timeout(self.answerer.answer, self.settings.answer_timeout_s,
+                                     question, pq, passages)
         try:
-            return retry(attempts=2, base_delay=0.5)(call_with_timeout)(
-                self.answerer.answer, self.settings.answer_timeout_s, question, pq, passages)
+            try:
+                return call()
+            except TimeoutError:
+                raise
+            except Exception as first:
+                log.warning("answerer error; retrying once",
+                            extra={"error": f"{type(first).__name__}: {first}"})
+                time.sleep(0.3)
+                return call()
         except Exception as e:
             if isinstance(self.answerer, ExtractiveAnswerer):
                 raise

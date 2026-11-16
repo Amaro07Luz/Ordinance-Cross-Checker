@@ -18,13 +18,14 @@ run:              ## API with auto-reload (in-memory unless DATABASE_URL is set)
 test:             ## all workstream smoke tests + Part E tests
 	python -m processing.test_processing
 	python -m retrieval.test_retrieval
+	python -m analysis.test_analysis
 	python -m pytest -q
 
 eval:             ## eval harness with the CI gate
 	SEED_DIR=$${SEED_DIR:-eval/seed_corpus} python -m eval.harness --min-success 0.85 --max-p95-ms 1500
 
 lint:
-	ruff check app eval tests
+	ruff check app eval tests analysis
 
 reindex:          ## run Part B over data/raw into DATABASE_URL
 	python -m processing.pipeline --raw-dir data/raw --embedder $${EMBEDDING_BACKEND:-hashing}

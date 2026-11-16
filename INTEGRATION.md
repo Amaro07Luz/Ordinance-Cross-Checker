@@ -1,15 +1,14 @@
 # Integration status (M3-E)
 
-M3-E is the integration branch: it contains Part A (via M3-B), Part B (M3-B)
-and Part C (M3-C), plus the Part E platform. Part D has no branch yet, so the
-API runs with a stand-in until it lands.
+M3-E is the integration branch: it contains Part A (via M3-B), Part B (M3-B),
+Part C (M3-C) and Part D (M3-D), plus the Part E platform.
 
 | Part | Branch | In M3-E? | How E uses it |
 |---|---|---|---|
 | A: Source registry, crawlers, raw storage | M3-A | yes (merged through M3-B) | `SourceRegistry` for `/api/jurisdictions`; raw files in `data/raw/<jurisdiction-slug>/` |
 | B: Processing and indexing | M3-B | yes | `IndexService` runs B's `ProcessingPipeline`, reads B's pgvector store |
 | C: Query understanding and retrieval | M3-C | yes | `QueryParser` + `HybridRetriever` over B's chunks (reusing B's stored vectors) |
-| D: Analysis agent | none | **no: stand-in** | `app/services/answerer.py` → `ExtractiveAnswerer` |
+| D: Analysis agent | M3-D | yes | loaded automatically as `part-d:AnalysisAgent`; its extra output is under `answer.details` |
 | E: Platform, API and eval | M3-E | yes | this branch |
 
 Merge order into `main`: **M3-B → M3-C → M3-D → M3-E**. Because M3-E already
@@ -17,7 +16,17 @@ contains B's and C's commits, those merges won't conflict with it.
 
 ---
 
-## When Part D is done
+## Part D (merged)
+
+Steps 1–5 below are done. `ExtractiveAnswerer` remains as the fallback if Part D
+errors or times out (timeouts are not retried; other errors are retried once).
+
+**Open issue in Part D (`analysis/conflicts.py`):** constraints are extracted from every
+retrieved passage, not just the cited ones, and accessory-structure limits are read as
+building height. Repro: "Compare max building height in Fulshear and Marlton" reports
+"35 ft vs. 15 ft". The 15 ft is § 160-14 (sheds), while Marlton's building height (§ 160-12)
+is also 35 ft. Likely fix: only use constraints from cited passages, and skip sentences about
+accessory structures, sheds, fences or signs for "building height".
 
 The API looks for Part D automatically (`ANSWERER=auto`). Part D needs to provide:
 

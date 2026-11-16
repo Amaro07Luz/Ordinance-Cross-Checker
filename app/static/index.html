@@ -107,13 +107,20 @@ function render(d, clientMs) {
   const status = a.abstained ? `<span class="badge warn">no confident answer</span>`
                              : `<span class="badge ok">answered · confidence ${a.confidence}</span>`;
   const cites = a.citations.map(c => `<li><a href="${esc(c.source_url)}" target="_blank" rel="noopener">${esc(c.jurisdiction)} — ${esc(c.section_title)}</a>${c.page_start ? ` <span style="color:var(--muted)">(p. ${c.page_start}${c.page_end && c.page_end !== c.page_start ? "–" + c.page_end : ""})</span>` : ""}</li>`).join("");
-  const warns = (d.warnings || []).map(w => `<div class="warn-box">${esc(w)}</div>`).join("");
+  const det = a.details || {};
+  const conflicts = (det.conflicts || []).filter(c => c.kind !== "comparison");
+  const review = det.needs_human_review
+    ? `<div class="warn-box"><b>Needs human review:</b> sources disagree.<ul style="margin:4px 0 0 18px;padding:0">${
+        conflicts.map(c => `<li>${esc(c.note)}</li>`).join("")}</ul></div>` : "";
+  const warns = review + (d.warnings || []).map(w => `<div class="warn-box">${esc(w)}</div>`).join("");
   const passages = d.passages.map(p => `<div class="passage"><b>#${p.rank} ${esc(p.jurisdiction)} — ${esc(p.section_title)}</b>
       <span style="color:var(--muted)"> score ${p.score} · ${esc(p.scope)}</span><pre>${esc(p.content)}</pre></div>`).join("");
   $("out").innerHTML = `<div class="card">
     <div class="meta">${status}
       <span class="badge">${Math.round(d.timing_ms.total)} ms server · ${Math.round(clientMs)} ms total</span>
       ${d.cached ? '<span class="badge">cached</span>' : ""}
+      ${det.mode ? `<span class="badge">${det.mode === "llm" ? "AI summary · " + esc(det.model || "") : "quoted from sources"}</span>` : ""}
+      ${det.needs_human_review ? '<span class="badge warn">needs review</span>' : ""}
       ${d.parsed.jurisdictions.length ? `<span class="badge">${esc(d.parsed.jurisdictions.join(", "))}</span>` : ""}
       ${d.parsed.regulation_types.map(t => `<span class="badge">${esc(t)}</span>`).join("")}
     </div>

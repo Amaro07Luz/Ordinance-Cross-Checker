@@ -40,6 +40,9 @@ log = logging.getLogger(__name__)
 PART_D_MODULE = "analysis.agent"
 PART_D_CLASS = "AnalysisAgent"
 PART_D_METHOD = "answer"
+# Extra keys Part D returns that the API passes through under answer.details
+PART_D_EXTRA_KEYS = ("needs_human_review", "conflicts", "gaps", "mode", "model",
+                     "revisions", "dropped_claims", "timing_ms")
 
 
 @dataclass
@@ -62,6 +65,8 @@ class Answer:
     confidence: float
     answerer: str
     warnings: List[str] = field(default_factory=list)
+    # Extra analysis output from Part D (conflicts, gaps, needs_human_review, mode, ...)
+    details: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -161,6 +166,7 @@ class PartDAdapter:
             confidence=float(get("confidence", 0.0) or 0.0),
             answerer=self.name,
             warnings=list(parsed.warnings) + list(get("warnings", []) or []),
+            details={k: get(k) for k in PART_D_EXTRA_KEYS if get(k) is not None},
         )
 
 
@@ -171,7 +177,7 @@ def load_answerer(mode: str = "auto"):
     try:
         module = importlib.import_module(PART_D_MODULE)
         agent = getattr(module, PART_D_CLASS)()
-        log.info("using Part D analysis agent", extra={"module": PART_D_MODULE})
+        log.info("using Part D analysis agent", extra={"part_d_module": PART_D_MODULE})
         return PartDAdapter(agent)
     except (ImportError, AttributeError) as e:
         if mode == "partd":

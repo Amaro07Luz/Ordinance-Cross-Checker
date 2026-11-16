@@ -32,6 +32,9 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANSWERER: ${ANSWERER:-auto}
+      ANALYSIS_LLM: ${ANALYSIS_LLM:-auto}
+      ANALYSIS_MODEL: ${ANALYSIS_MODEL:-gpt-4o-mini}
+      ANALYSIS_TIMEOUT_S: ${ANALYSIS_TIMEOUT_S:-20}
       SEED_DIR: ${SEED_DIR:-/app/eval/seed_corpus}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-change-me}
       LOG_JSON: "true"
