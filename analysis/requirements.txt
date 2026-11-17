@@ -1,0 +1,3 @@
+# Part D (analysis agent). Everything else it needs comes from Part C (retrieval/).
+# Optional: without it (or without OPENAI_API_KEY) Part D runs in extractive mode.
+openai>=1.40
