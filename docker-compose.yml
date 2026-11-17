@@ -1,6 +1,8 @@
-# Local Postgres + pgvector for Part B indexing and Part C/D retrieval.
-#   docker compose up -d
-#   export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/regintel
+# Full stack: Postgres + pgvector and the API/UI.
+#   cp .env.example .env      (optional)
+#   docker compose up --build  -> http://localhost:8000
+# DB only (e.g. running the API with uvicorn locally):
+#   docker compose up -d db && export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/regintel
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -12,5 +14,38 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_platform.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d regintel"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      args:
+        WITH_ML: ${WITH_ML:-false}
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/regintel
+      EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-hashing}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANSWERER: ${ANSWERER:-auto}
+      ANALYSIS_LLM: ${ANALYSIS_LLM:-auto}
+      ANALYSIS_MODEL: ${ANALYSIS_MODEL:-gpt-4o-mini}
+      ANALYSIS_TIMEOUT_S: ${ANALYSIS_TIMEOUT_S:-20}
+      SEED_DIR: ${SEED_DIR:-/app/eval/seed_corpus}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-change-me}
+      LOG_JSON: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/raw:/app/data/raw:ro      # Part A's downloaded documents, for /api/admin/reindex
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:

@@ -1,142 +1,101 @@
-# Ordinance-Cross-Checker — M3-D: Regulatory Analysis Agent
+# Ordinance-Cross-Checker
 
-Part D of the pipeline: takes Part C's retrieved passages and returns a grounded answer
-with verified citations, flags conflicting or missing information, and abstains when the
-evidence doesn't support an answer.
+Government Regulatory Intelligence Agent (M3 prototype): ask about zoning, subdivision,
+setback and permitting rules in Texas and New Jersey jurisdictions and get answers that
+cite the exact ordinance section.
+
+Team: Vincent Zheng, Riley Beaudion, Amaro Da Luz, Harlon Sprague, Ishaan Sayal
 
 ```
- A  crawlers ─► B  processing/ ─► C  retrieval/ ─► D  analysis/ ─► E  app/ (API, UI, eval)
-                                                   ▲ this branch
+ A  Source registry / crawlers  ──► data/raw/<jurisdiction>/
+ B  processing/   extract · OCR · clean · section chunks · versions · embeddings ──► pgvector
+ C  retrieval/    query parsing · hybrid BM25 + vector search · rerank
+ D  analysis/     answer + citations (not merged yet; stand-in in app/services/answerer.py)
+ E  app/ eval/    FastAPI · web UI · logging · retries · caching · metrics · eval · CI
 ```
 
-This branch contains only `analysis/`. Merge order: **M3-B → M3-C → M3-D → M3-E**.
-It needs Part C (`retrieval/`) and Part A's `ingestion_pipeline_part_a.py` on the path,
-which M3-E already has.
+See [INTEGRATION.md](INTEGRATION.md) for what each part provides and what to change when Part D lands.
 
-## How it plugs into Part E
+## Quick start
 
-E loads it automatically (`ANSWERER=auto`), exactly as `INTEGRATION.md` specifies:
-
-```python
-# analysis/agent.py
-class AnalysisAgent:
-    def answer(self, question: str, parsed: ParsedQuery,
-               passages: List[RetrievedPassage]) -> dict
+**Docker (Postgres + pgvector + API):**
+```bash
+docker compose up --build          # http://localhost:8000  (UI)   /docs (API)
 ```
 
-No names differ, so `PART_D_MODULE / PART_D_CLASS / PART_D_METHOD` and
-`PartDAdapter._normalize()` in E stay as they are. Guarantees E relies on:
+**Local, no database:**
+```bash
+pip install -r requirements-dev.txt
+make run                            # in-memory index seeded from eval/seed_corpus
+```
 
-- `AnalysisAgent()` takes no required arguments and **never raises** at construction
-  (E only tolerates ImportError/AttributeError at startup).
-- `answer()` doesn't raise on LLM problems. It falls back to quoting the sources and says so
-  in `warnings`. Its LLM budget (`ANALYSIS_TIMEOUT_S`, 20 s) stays below E's
-  `ANSWER_TIMEOUT_S` (30 s).
-- Citations are only chunk_ids from the passages it was given, numbered 1..n in order and
-  matching the `[n]` markers in the text, so E's adapter numbering lines up.
-- `parsed.warnings` are not repeated (E's adapter already adds them).
+**Local with Postgres:**
+```bash
+make db
+export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/regintel
+make run
+```
 
-Returned dict: `answer`, `citations` (`[{n, chunk_id, quote, jurisdiction, section_title,
-source_url}]`), `abstained`, `confidence`, `warnings`, **plus** extras E ignores until it
-passes them through: `claims`, `conflicts`, `gaps`, `needs_human_review`, `mode`
-(`llm`|`extractive`), `model`, `revisions`, `dropped_claims`, `timing_ms`.
+The index is seeded from `SEED_DIR` on first start. `eval/seed_corpus` is a **synthetic**
+corpus for development and CI. Real documents go in `data/raw/<jurisdiction-slug>/`, then
+run `make reindex`.
 
-## How it works
+## API
 
-| File | Role |
-|---|---|
-| `agent.py` | `AnalysisAgent`, the E-facing entry point |
-| `graph.py` | Pipeline: precheck → select evidence → draft → validate → revise once → cross-reference → compose |
-| `prompts.py` | System prompt and message builders. Passages are labelled P1..Pn; the model returns JSON claims `{passage, statement, quote}` |
-| `citations.py` | Deterministic citation validator |
-| `conflicts.py` | Numeric requirement extraction, conflict detection, gap detection (no LLM) |
-| `llm.py` | OpenAI client (any OpenAI-compatible endpoint), `FakeLLM` for tests, env config |
-| `models.py`, `text.py` | Data classes; normalization and number helpers |
-| `test_analysis.py` | 23 tests, no network needed |
+| Method | Path | |
+|---|---|---|
+| POST | `/api/query` | `{"question": "...", "jurisdiction"?: "...", "top_k"?: 5}` → answer, citations, passages, parsed query, warnings, `timing_ms` |
+| GET | `/api/jurisdictions` | Part A registry + indexed chunk counts |
+| GET | `/api/health` | readiness, index size, and which parts are real vs stand-in |
+| GET | `/api/metrics?source=api` | query success rate, abstain/error rate, cache hit rate, p50/p95/p99 latency |
+| POST | `/api/feedback` | `{"request_id": "...", "helpful": true}` |
+| POST | `/api/admin/reindex` | runs Part B over `raw_dir`; requires `X-Admin-Token` |
 
-**The LLM writes, code checks.** Every claim must cite a passage it was given, quote it
-word for word, and contain no number that isn't in the quote. It also can't attribute a rule
-to a different jurisdiction. Failing claims go back to the model once with the specific
-problems listed. Anything still failing is dropped, and the user is told how many. If nothing
-survives, Part D quotes the sources directly instead. The 1–2 sentence summary is held to the
-same number check and is dropped if it fails.
+Every response carries `X-Request-ID` and `X-Response-Time-ms`. Errors are always
+`{"error", "detail", "request_id"}`. Logs are JSON lines tagged with the request id.
 
-**Abstains (no LLM call)** when there are no passages, no jurisdiction was recognized,
-retrieval came back from other places only, or Part C's `low_confidence()` fires.
-It also abstains when the model says the passages don't answer the question.
+## Reliability
 
-**Conflicts.** Extracts requirements like *front setback ≥ 25 ft* or *height ≤ 35 ft*
-from the passages and compares them:
+- **Retries:** DB connections retry with exponential backoff and jitter. A dropped
+  connection is reopened once. Retrieval and the answer step retry once.
+- **Timeouts and fallback:** the answer step (Part D / LLM) is bounded by
+  `ANSWER_TIMEOUT_S`. If it fails, the API returns an extractive answer with a warning
+  instead of an error.
+- **Caching:** TTL + LRU response cache keyed on the normalized question, filters, index
+  version and answerer. Cleared on reindex.
+- **Persistence:** every request goes to `query_log`. Feedback and eval runs are stored too
+  (`db/schema.sql`).
 
-- `overlapping_jurisdictions`: e.g. Fulshear vs. Fort Bend County. Both may apply, so
-  `needs_human_review` is set and a warning is added.
-- `within_jurisdiction`: two documents of the same place disagree. Also flagged for review.
-- `comparison`: the user asked about several places and they differ. That's the answer,
-  so it's listed in the text but not flagged.
+## Evaluation
 
-Values from different zoning districts (R-1 vs. E-1), or from the same document, aren't
-treated as conflicts.
+```bash
+make eval                                   # in-process
+python -m eval.harness --url http://localhost:8000
+```
 
-**Gaps:** requested jurisdiction not indexed or not answered, parent county not indexed,
-TxDOT/NJDOT rules needed but not indexed, regulation type not covered by the cited text, and
-no effective date on the source documents. These are returned as `gaps` and as `warnings`.
+Runs `eval/queries.jsonl` (20 jurisdiction questions + 2 edge cases that should abstain)
+and writes `eval/reports/latest.{json,md}`.
 
-**Without an API key** Part D runs in *extractive* mode: it picks the most relevant sentences
-verbatim and still runs conflict and gap detection. CI uses this mode.
+- **Response time:** p50 and p95 with the cache off, plus the cached p50.
+- **Query success rate:** HTTP 200, plus correct answer-vs-abstain, expected section in
+  the top k, and expected values present.
+- Also reported: hit@k, MRR, jurisdiction accuracy and abstain accuracy.
+
+CI fails below 85% success or above 1500 ms p95.
+
+## CI
+
+`.github/workflows/ci.yml` on every push and PR:
+- lint
+- Part B and Part C smoke tests
+- Part E pytest suite against a pgvector service
+- eval harness gate (report shown in the job summary and uploaded as an artifact)
+- Docker build + `/api/health` boot check
 
 ## Configuration
 
-| Variable | Default | |
-|---|---|---|
-| `ANALYSIS_LLM` | `auto` | `auto`: OpenAI if `OPENAI_API_KEY` is set and `openai` is installed. `openai`: same, but warn on every answer if unavailable. `none`: never call an LLM |
-| `OPENAI_API_KEY` | – | |
-| `ANALYSIS_MODEL` | `gpt-4o-mini` | Any chat model; pick a current one |
-| `OPENAI_BASE_URL` | – | Any OpenAI-compatible endpoint (e.g. Gemini's) |
-| `ANALYSIS_TIMEOUT_S` | `20` | Total LLM budget per answer; keep below E's `ANSWER_TIMEOUT_S` |
-| `ANALYSIS_MIN_TOP_SCORE` | `0.9` | Abstain threshold passed to C's `low_confidence()` |
-
-## Tests
-
-```bash
-python -m analysis.test_analysis        # or: python -m pytest -q analysis/test_analysis.py
-```
-
-Verified inside M3-E's tree, with no changes to E:
-
-- `analysis.test_analysis`: 23/23.
-- E's `pytest`: 18/19. The one failure is expected; see below.
-- Ruff: clean.
-- `make eval` with `answerer=part-d:AnalysisAgent`: success 100%, hit@5 100%, abstain
-  accuracy 100%, p95 1.8 ms (extractive mode).
-
-## For Part E when merging (small, all in E's files)
-
-1. `tests/test_api.py` line 17 asserts `D_analysis_agent.startswith("stand-in")`. Once D is
-   present it is `"ok"` (as INTEGRATION.md step 4 expects), so change it to `== "ok"`.
-2. Add `openai>=1.40` to `requirements.txt`. Add `ANALYSIS_LLM`, `ANALYSIS_MODEL` and
-   `ANALYSIS_TIMEOUT_S` to `.env.example` and to `docker-compose.yml` → `api.environment`.
-   `OPENAI_API_KEY` is already there.
-3. Add `python -m analysis.test_analysis` to the Makefile `test` target and to CI next to
-   the B/C smoke tests.
-4. Keep CI without `OPENAI_API_KEY`, so the 1500 ms p95 gate tests the extractive path. Run the
-   LLM eval separately with a looser gate (design target: < 15 s), e.g.
-   `ANALYSIS_LLM=openai python -m eval.harness --max-p95-ms 15000`.
-5. Optional: pass `conflicts`, `gaps` and `needs_human_review` through `PartDAdapter` and show
-   them in the UI. Today they reach the user only as warning boxes.
-
-## Known limitations
-
-- **The real-LLM path hasn't been run against OpenAI yet.** No key was available while
-  building it. It has been tested with `FakeLLM` (good answers, invented numbers, bad quotes,
-  revise, timeouts, invalid JSON) and with the real client pointed at an unreachable endpoint,
-  which falls back cleanly. Run the eval with a key before the demo.
-- **Conflict detection is only tested on hand-written fixtures.** The seed corpus has one
-  document set per place, with no Fort Bend County and no TxDOT/NJDOT documents. Adding
-  overlapping real documents (A/B) is what will exercise it.
-- **Outdated rules can't be detected yet.** B stores `extracted_at` and `doc_version` but no
-  effective/adoption date, so every answer carries an "effective dates aren't recorded" note
-  until B adds one (`effective_date` in chunk metadata is picked up automatically).
-- **Requirement extraction is regex-based.** It covers setbacks, height, lot
-  area/width/coverage, density, parking, right-of-way, driveway spacing and flood elevation.
-  Real ordinances will have phrasings it misses: a missed requirement means a missed conflict,
-  never an invented one.
+See `.env.example`. Main settings:
+- `DATABASE_URL`
+- `EMBEDDING_BACKEND` (`hashing` for tests; `sentence-transformers` or `openai` for real use)
+- `ANSWERER` (`auto` | `stub` | `partd`)
+- `SEED_DIR`, `TOP_K`, `CACHE_TTL_S`, `ANSWER_TIMEOUT_S`, `ADMIN_TOKEN`

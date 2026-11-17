@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Regulatory Intelligence Agent</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#667085; --line:#e4e7ec;
+          --accent:#1f5eff; --warn:#b54708; --warnbg:#fffaeb; --ok:#067647; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:20px 24px; border-bottom:1px solid var(--line); background:var(--card); }
+  header h1 { margin:0; font-size:18px; } header p { margin:2px 0 0; color:var(--muted); font-size:13px; }
+  main { max-width:880px; margin:24px auto; padding:0 16px; }
+  form { display:flex; gap:8px; flex-wrap:wrap; }
+  textarea { flex:1 1 100%; min-height:70px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font:inherit; resize:vertical; }
+  select, button { padding:8px 12px; border-radius:8px; border:1px solid var(--line); font:inherit; background:var(--card); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; margin-left:auto; }
+  button:disabled { opacity:.6; cursor:wait; }
+  .examples { margin:10px 0 0; display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { font-size:12px; padding:4px 10px; border-radius:999px; border:1px solid var(--line); background:var(--card); cursor:pointer; color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-top:16px; }
+  .meta { display:flex; gap:8px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-bottom:10px; }
+  .badge { padding:2px 8px; border-radius:999px; background:var(--bg); border:1px solid var(--line); }
+  .badge.ok { color:var(--ok); } .badge.warn { color:var(--warn); }
+  .answer { white-space:pre-wrap; }
+  .warn-box { background:var(--warnbg); color:var(--warn); border-radius:8px; padding:8px 12px; font-size:13px; margin-top:10px; }
+  ol.cites { padding-left:20px; margin:8px 0 0; font-size:14px; } ol.cites li { margin:4px 0; }
+  a { color:var(--accent); }
+  details { margin-top:10px; } summary { cursor:pointer; color:var(--muted); font-size:13px; }
+  .passage { border-top:1px solid var(--line); padding:8px 0; font-size:13px; }
+  .passage pre { white-space:pre-wrap; margin:4px 0 0; font:12px/1.45 ui-monospace,Menlo,monospace; color:#344054; }
+  .fb { margin-top:12px; display:flex; gap:6px; align-items:center; font-size:13px; color:var(--muted); }
+  .err { color:#b42318; }
+  footer { text-align:center; color:var(--muted); font-size:12px; margin:24px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Government Regulatory Intelligence Agent</h1>
+  <p>Ask about zoning, subdivision, setbacks and permits in the indexed TX and NJ jurisdictions. Answers cite the source section.</p>
+</header>
+<main>
+  <form id="f">
+    <textarea id="q" placeholder="e.g. What is the front yard setback in Fulshear's R-1 district?" required minlength="3" maxlength="1000"></textarea>
+    <select id="jur"><option value="">Any jurisdiction (auto-detect)</option></select>
+    <button class="primary" id="go" type="submit">Ask</button>
+  </form>
+  <div class="examples" id="examples"></div>
+  <div id="out"></div>
+  <footer id="foot"></footer>
+</main>
+<script>
+const EXAMPLES = [
+  "What is the front yard setback in Fulshear?",
+  "Driveway access requirements in Cypress, TX",
+  "Maximum building height in Marlton",
+  "Minor subdivision approval in Sewell 08080",
+  "Septic permit rules in Conroe",
+];
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+EXAMPLES.forEach(t => {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "chip"; b.textContent = t;
+  b.onclick = () => { $("q").value = t; $("f").requestSubmit(); };
+  $("examples").appendChild(b);
+});
+
+fetch("/api/jurisdictions").then(r => r.json()).then(list => {
+  list.forEach(j => {
+    const o = document.createElement("option");
+    o.value = j.name; o.textContent = `${j.name}, ${j.state} (${j.indexed_chunks} chunks)`;
+    $("jur").appendChild(o);
+  });
+}).catch(() => {});
+
+fetch("/api/health").then(r => r.json()).then(h => {
+  $("foot").textContent = `Index: ${h.index.chunks} chunks in ${h.index.store} · embedder ${h.index.embedder} · answerer ${h.answerer}`;
+}).catch(() => {});
+
+$("f").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const question = $("q").value.trim();
+  if (question.length < 3) return;
+  $("go").disabled = true; $("go").textContent = "Searching…";
+  const t0 = performance.now();
+  try {
+    const res = await fetch("/api/query", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question, jurisdiction: $("jur").value || null}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail
+                                 : JSON.stringify(data.detail || data.error));
+    render(data, performance.now() - t0);
+  } catch (err) {
+    $("out").innerHTML = `<div class="card err">Request failed: ${esc(err.message)}</div>`;
+  } finally {
+    $("go").disabled = false; $("go").textContent = "Ask";
+  }
+});
+
+function render(d, clientMs) {
+  const a = d.answer;
+  const status = a.abstained ? `<span class="badge warn">no confident answer</span>`
+                             : `<span class="badge ok">answered · confidence ${a.confidence}</span>`;
+  const cites = a.citations.map(c => `<li><a href="${esc(c.source_url)}" target="_blank" rel="noopener">${esc(c.jurisdiction)} — ${esc(c.section_title)}</a>${c.page_start ? ` <span style="color:var(--muted)">(p. ${c.page_start}${c.page_end && c.page_end !== c.page_start ? "–" + c.page_end : ""})</span>` : ""}</li>`).join("");
+  const det = a.details || {};
+  const conflicts = (det.conflicts || []).filter(c => c.kind !== "comparison");
+  const review = det.needs_human_review
+    ? `<div class="warn-box"><b>Needs human review:</b> sources disagree.<ul style="margin:4px 0 0 18px;padding:0">${
+        conflicts.map(c => `<li>${esc(c.note)}</li>`).join("")}</ul></div>` : "";
+  const warns = review + (d.warnings || []).map(w => `<div class="warn-box">${esc(w)}</div>`).join("");
+  const passages = d.passages.map(p => `<div class="passage"><b>#${p.rank} ${esc(p.jurisdiction)} — ${esc(p.section_title)}</b>
+      <span style="color:var(--muted)"> score ${p.score} · ${esc(p.scope)}</span><pre>${esc(p.content)}</pre></div>`).join("");
+  $("out").innerHTML = `<div class="card">
+    <div class="meta">${status}
+      <span class="badge">${Math.round(d.timing_ms.total)} ms server · ${Math.round(clientMs)} ms total</span>
+      ${d.cached ? '<span class="badge">cached</span>' : ""}
+      ${det.mode ? `<span class="badge">${det.mode === "llm" ? "AI summary · " + esc(det.model || "") : "quoted from sources"}</span>` : ""}
+      ${det.needs_human_review ? '<span class="badge warn">needs review</span>' : ""}
+      ${d.parsed.jurisdictions.length ? `<span class="badge">${esc(d.parsed.jurisdictions.join(", "))}</span>` : ""}
+      ${d.parsed.regulation_types.map(t => `<span class="badge">${esc(t)}</span>`).join("")}
+    </div>
+    <div class="answer">${esc(a.text)}</div>
+    ${cites ? `<ol class="cites">${cites}</ol>` : ""}
+    ${warns}
+    <details><summary>Retrieved passages (${d.passages.length})</summary>${passages}</details>
+    <div class="fb">Helpful?
+      <button type="button" onclick="fb('${d.request_id}', true, this)">👍</button>
+      <button type="button" onclick="fb('${d.request_id}', false, this)">👎</button>
+      <span style="margin-left:auto">request ${esc(d.request_id)} · ${esc(a.answerer)}</span>
+    </div></div>`;
+}
+
+async function fb(request_id, helpful, btn) {
+  await fetch("/api/feedback", {method: "POST", headers: {"Content-Type": "application/json"},
+                                body: JSON.stringify({request_id, helpful})});
+  btn.parentElement.firstChild.textContent = "Thanks! ";
+}
+</script>
+</body>
+</html>

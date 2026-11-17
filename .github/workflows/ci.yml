@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "M3-*"]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install ruff
+      - name: Lint platform code (gating)
+        run: ruff check app eval tests analysis
+      - name: Lint other workstreams (advisory)
+        run: ruff check processing retrieval ingestion_pipeline_part_a.py --exit-zero
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: regintel
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/regintel
+      EMBEDDING_BACKEND: hashing
+      ANALYSIS_LLM: none   # gate the extractive path; run LLM evals separately
+      SEED_DIR: eval/seed_corpus
+      LOG_JSON: "false"
+      LOG_LEVEL: WARNING
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - name: Install Tesseract (OCR fallback)
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
+      - run: pip install -r requirements-dev.txt
+
+      - name: Part B smoke test (extraction, OCR, chunking, versioning, pgvector)
+        run: python -m processing.test_processing
+      - name: Part C smoke test (retrieval)
+        run: python -m retrieval.test_retrieval
+      - name: Part D tests (analysis agent, extractive + FakeLLM)
+        run: python -m analysis.test_analysis
+      - name: Reset document index (Part B's test leaves its own fixtures)
+        run: psql "$DATABASE_URL" -c "DROP TABLE IF EXISTS chunks, document_versions, documents CASCADE"
+      - name: Part E unit + API tests
+        run: python -m pytest -q
+
+      - name: Eval harness (gate on success rate and p95 response time)
+        run: |
+          psql "$DATABASE_URL" -c "DROP TABLE IF EXISTS chunks, document_versions, documents CASCADE"
+          python -m eval.harness --min-success 0.85 --max-p95-ms 1500
+      - name: Publish eval report
+        if: always()
+        run: test -f eval/reports/latest.md && cat eval/reports/latest.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-report
+          path: eval/reports/
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t regintel:ci .
+      - name: Boot stack and hit /api/health
+        run: |
+          docker compose up -d --build
+          for i in $(seq 1 40); do
+            curl -fs http://localhost:8000/api/health && exit 0; sleep 3
+          done
+          docker compose logs api; exit 1
